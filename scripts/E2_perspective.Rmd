@@ -1,0 +1,348 @@
+---
+title: "Experiment 2: Perspective perception experiment"
+author: "Bodo Winter, Julius Hassemer"
+date: "9/3/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preprocessing
+
+This is the analysis for Experiment 2. We begin by loading the necessary libraries.
+
+```{r libraries, message = FALSE}
+library(tidyverse)
+library(stringr)
+library(MuMIn)
+```
+
+Next, load in the data.
+
+```{r E2_data_entry}
+E2 <- read.csv('../data/E2.csv',
+               fileEncoding = 'latin1')
+```
+
+Let's rename the really ugly column names (thanks Qualtrics!).
+
+```{r E2_renaming}
+E2 <- rename(E2,
+             Response = The.gesture.you.just.saw.characterized.an.object..Ê.What.do.you.think.the.gesture.was.about.,
+             ObjectCondition = Display.Order..Block.Randomizer.FL_3,
+             Control = What.is.4...17..Please.type.in.your.answer.,
+             Age = What.is.your.age.,
+             Gender = What.is.your.gender.,
+             Handedness = Are.you.left.or.right.handed.,
+             Language = What.is.your.native.language...your.native.languages..Your.native.language.s..is.what.you.spoke.a...)
+```
+
+Let's get only those columns that we need:
+
+```{r subset_cols}
+E2 <- select(E2,
+             Response,
+             ObjectCondition,
+             Control,
+             Age,
+             Gender,
+             Handedness,
+             Language)
+```
+
+Since we used read.csv, let's make things into characters:
+
+```{r char_convert}
+E2 <- mutate(E2,
+             Response = as.character(Response),
+             ObjectCondition = as.character(ObjectCondition),
+             Control = as.character(Control),
+             Age = as.character(Age),
+             Gender = as.character(Gender),
+             Handedness = as.character(Handedness),
+             Language = as.character(Language))
+```
+
+Check the number of data points:
+
+```{r check_N}
+nrow(E2)
+```
+
+Get rid of Ju's test response and those that got the math question (sanity check) wrong:
+
+```{r clean}
+E2 <- filter(E2,
+             Control != 'JuTest',
+             Control == '21')
+nrow(E2)
+```
+
+Take only those that are native speakers (actually, this step doesn't matter as much as this is essentially a nonlinguistic task — but we want to make sure that people understood the questions right and that the sample corresponds to a well-defined population of interest). Bilinguals are included, so long as they list English first.
+
+```{r native_speakers}
+these_langs <- c('Italian', 'Japanese, English', 'Russian',
+	'Serbian', 'Spanish and English', 'tamil, english', 'German', 'none',
+	'Serbian ')
+E2 <- filter(E2, !(Language %in% these_langs))
+nrow(E2)
+```
+
+How many men/women?
+
+```{r gender_check}
+table(E2$Gender)
+```
+
+Create a response column, as well as a numerical version of it, with shape as reference level ("towards height").
+
+```{r create_response}
+E2 <- mutate(E2,
+             Response = str_extract(Response, 'shape|height'),
+             Resp01 = ifelse(Response == 'height', 1, 0))
+```
+
+Separate the condition column so that we have the information for the separate conditions in separate columns.
+
+```{r sep_conds}
+E2 <- separate(E2, col = ObjectCondition,
+	into = c('Perspective', 'Tilt', 'PinkieCurl'),
+	remove = FALSE)
+```
+
+Explanation: "Tilt" is discussed as "Viewing Angle" in the paper, "Perspective" is discussed as "Viewing Direction".
+
+Create a numerical pinkie curl variable and center this variable:
+
+```{r pinkie_num}
+E2 <- mutate(E2,
+             PinkieCurl = as.numeric(as.factor(PinkieCurl)),
+             PinkieCurl_c = PinkieCurl - mean(PinkieCurl))
+```
+
+Check randomization:
+
+```{r randomization_check}
+table(E2$Perspective)
+table(E2$Tilt)
+table(E2$PinkieCurl)
+table(E2$Perspective, E2$PinkieCurl)
+table(E2$Perspective, E2$Tilt)
+table(E2$PinkieCurl, E2$Tilt)
+```
+
+Looks all nice and balanced.
+
+This is how the PinkieCurl is coded:
+
+- small values = high curl
+- large values = big extension
+
+1 is maximally curled in and 9 is maximally extended. So in effect, this is an extension variable.
+
+## Descriptive values
+
+Let's look at the data descriptively:
+
+```{r descriptive_summaries}
+# Perspective:
+
+E2 %>% group_by(Perspective) %>%
+  summarize(Height = mean(Resp01))
+
+# Tilt:
+
+E2 %>% group_by(Tilt) %>%
+  summarize(Height = mean(Resp01))
+
+# Pinkie curl:
+
+E2 %>% group_by(PinkieCurl) %>%
+  summarize(Height = mean(Resp01)) %>% 
+  mutate(Shape = 1 - Height)
+```
+
+Descriptive values by tilt and perspective (for plot).
+
+```{r tilt_and_persp_means}
+E2 %>% group_by(Perspective, Tilt) %>%
+  summarize(Height = round(mean(Resp01), 2))
+```
+
+## Setting up predictors
+
+We should sum-code perspective, since it's going to feature in interactions. We'll also make Tilt into a numeric variable since the steps are equal-sized.
+
+```{r code_predictors}
+E2 <- mutate(E2,
+             Perspective_c = as.numeric(as.factor(Perspective)) - 2,
+             Tilt_c = as.numeric(as.factor(Tilt)) - 2)
+```
+
+In Hassemer and Winter (2016), we found a quadratic pattern for pinkie curl. So we'll create a quadratic predictors:
+
+```{r pinkie_quadr}
+E2 <- mutate(E2,
+             PinkieCurl_c2 = PinkieCurl_c ^ 2)
+```
+
+## Analysis
+
+The main model that is reported is the following:
+
+```{r main_model}
+xmdl <- glm(Resp01 ~ PinkieCurl_c + PinkieCurl_c2 +
+              Perspective_c + Tilt_c,
+            E2, family = 'binomial')
+summary(xmdl)
+```
+
+Check the coefficients for reporting:
+
+```{r main_model_coefs}
+# Estimates:
+
+summary(xmdl)$coefficients[, 1]
+
+# Standard errors:
+
+summary(xmdl)$coefficients[, 2]
+
+# Reverse for reporting (more intuitive this way) and compute odds:
+
+exp(summary(xmdl)$coefficients[, 1] * -1)
+```
+
+In addition, let's assess whether there are any interactions:
+
+```{r interact_model}
+xmdl.interact <- glm(Resp01 ~
+                       (PinkieCurl_c + PinkieCurl_c2) *
+                       (Perspective_c + Tilt_c) +
+                       PinkieCurl_c:Perspective_c:Tilt_c +
+                       PinkieCurl_c2:Perspective_c:Tilt_c,
+                     E2, family = 'binomial')
+summary(xmdl.interact)
+
+# Test all of them in one likelihood ratio test:
+
+anova(xmdl, xmdl.interact, test = 'Chisq')
+```
+
+Let's create the null models for likelihood ratio tests.
+
+```{r null_models}
+xmdl.nopinkie <- glm(Resp01 ~
+                       Perspective_c + Tilt_c,
+                     E2, family = 'binomial')
+xmdl.nopinkie.noquadr <- glm(Resp01 ~
+                               Perspective_c + Tilt_c + PinkieCurl_c,
+                             E2, family = 'binomial')
+xmdl.nopersp <- glm(Resp01 ~
+                      PinkieCurl_c + PinkieCurl_c2 + Tilt_c,
+                    E2, family = 'binomial')
+xmdl.notilt <- glm(Resp01 ~
+                     Perspective_c + PinkieCurl_c + PinkieCurl_c2,
+                   E2, family = 'binomial')
+```
+
+Let's perform likelihood ratio tests:
+
+```{r likelihood_ratio_tests}
+# Test pinkie curl, quadratic and linear together:
+
+anova(xmdl.nopinkie, xmdl, test = 'Chisq')
+
+# Only quadratic pinkie curl effect:
+
+anova(xmdl.nopinkie.noquadr, xmdl, test = 'Chisq')
+
+# Only linear pinkie curl effect:
+
+anova(xmdl.nopinkie, xmdl.nopinkie.noquadr, test = 'Chisq')
+
+# Perspective effect:
+
+anova(xmdl.nopersp, xmdl, test = 'Chisq')
+
+# Tilt effect:
+
+anova(xmdl.notilt, xmdl, test = 'Chisq')
+```
+
+# Assess R-squared
+
+```{r}
+# Full model:
+
+r.squaredGLMM(xmdl)
+
+# Pinkie curl effect:
+
+r.squaredGLMM(xmdl)[1] - r.squaredGLMM(xmdl.nopinkie)[1]
+
+# Perspective effect:
+
+r.squaredGLMM(xmdl)[1] - r.squaredGLMM(xmdl.nopersp)[1]
+
+# Tilt effect:
+
+r.squaredGLMM(xmdl)[1] - r.squaredGLMM(xmdl.notilt)[1]
+```
+
+# Derive model predictions
+
+Let's get the model predictions for the significant Perspective effect. First, we define the new data frame with values to derive predictions for. Then we use predict()
+
+```{r persp_preds}
+newdata_persp <- data.frame(PinkieCurl_c = 0,
+                      PinkieCurl_c2 = 0,
+                      Tilt_c = 0,
+                      Perspective_c = c(-1, 1))
+
+## Check predictions:
+
+plogis(predict(xmdl, newdata_persp))
+```
+
+Next, we check the predictions for the significant Pinkie Curl effect:
+
+```{r pinkie_preds}
+uniques <- sort(unique(E2$PinkieCurl_c))
+newdata_pinkie <- data.frame(PinkieCurl_c = uniques,
+                      Tilt_c = 0,
+                      Perspective_c = 0) %>%
+  mutate(PinkieCurl_c2 = PinkieCurl_c ^ 2)
+newdata_pinkie$Height <- plogis(predict(xmdl, newdata_pinkie))
+newdata_pinkie$Height
+
+```
+
+Let's get the upper and lower confidence bands for this (for plot):
+
+```{r pinke_preds_CI}
+# Standard errors:
+
+SEs <- predict(xmdl, newdata_pinkie, se.fit = TRUE)$se.fit
+
+# 2 times standard errors:
+
+SE2 <- predict(xmdl, newdata_pinkie, se.fit = TRUE)$se.fit * 2
+
+# Log odds:
+
+logits <- predict(xmdl, newdata_pinkie, se.fit = TRUE)$fit
+
+# Upper and lower bounds:
+
+newdata_pinkie$UB <- logits + SE2
+newdata_pinkie$LB <- logits - SE2
+
+# Check:
+
+select(newdata_pinkie, -Tilt_c, -Perspective_c)
+```
+
+

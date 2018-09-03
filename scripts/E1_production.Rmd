@@ -1,0 +1,131 @@
+---
+title: "Experiment 1a & 1b: Production experiment"
+author: "Bodo Winter, Julius Hassemer"
+date: "9/3/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This is the analysis for Experiment 1. We begin by loading the necessary libraries.
+
+```{r libraries, message = FALSE}
+library(tidyverse)
+library(stringr)
+```
+
+Next, load in the data for E1a.
+
+```{r E1a_data_entry}
+E1a <- read_csv('../data/E1a.csv')
+```
+
+There's some necessary preprocessing of the E1a data.
+
+```{r E1_preprocess}
+# Combine:
+
+E1a[E1a$dice.removal == 'removed dice before 1st prompt', ]$dice.removal <- 'removed before 1st'
+
+# Rename:
+
+E1a[E1a$dice.removal == 'removed dice before 1st task', ]$dice.removal <- 'removed before 1st'
+E1a[E1a$dice.removal == 'removed dice before 2nd task', ]$dice.removal <- 'removed dice before 2nd'
+```
+
+Next, load in the data for E1b, which is in a separate text file.
+
+```{r E1b_data_entry}
+E1b <- readLines('../data/E1b.txt')
+
+head(E1b)
+```
+
+Explanation of how this data has been coded: The first letter is the condition, the second is the response.
+
+* O = shows circle
+* I = shows stick
+* i = response expected of thin form, i.e., dice stay in hand
+* o = response expected of round form, i.e., dice are taken out of hand
+
+We need to transform this into a data frame with two columns.
+
+```{r E1b_clean}
+E1b <- str_split(E1b, '', simplify = TRUE)
+E1b <- as_tibble(E1b) %>% 
+  rename(condition = V1, response = V2)
+E1b
+```
+
+How many data points each?
+
+```{r check_N}
+nrow(E1a)
+nrow(E1b)
+```
+
+## Analysis of E1a
+
+This is the analysis of experiment 1a. As specified in the paper, we only look at those participants that removed the distractor dies at least once. Those people that kept the dice for the entire task are not interesting to our hypothesis, since they show no difference between the shape and the height task.
+
+```{r E1a_analysis}
+# Overall:
+
+table(E1a$dice.removal)
+round(prop.table(table(E1a$dice.removal)), 2)
+
+# Crosstabulate:
+
+E1a_tab <- table(E1a$question.order, E1a$dice.removal)
+E1a_tab
+
+# Specify vector of column names with removers:
+
+mycols <- c('removed before 1st',
+            'removed dice before 2nd')
+
+# Get column position identifiers:
+
+these_cols <- colnames(E1a_tab)
+these_cols <- which(these_cols %in% mycols)
+
+# Extract subset of removers:
+
+E1a_tab_red <- E1a_tab[, these_cols]
+E1a_tab_red
+
+# Look at proportions:
+
+round(prop.table(E1a_tab_red, 1), 2)
+
+# Fisher's exact test:
+
+fisher.test(E1a_tab_red)
+```
+
+## Analysis of E1b
+
+Perform the analysis for E1b.
+
+```{r E1b_analysis}
+# Crosstabulate:
+
+E1b_tab <- table(E1b$condition, E1b$response)
+E1b_tab
+
+# Look at proportions:
+
+round(prop.table(E1b_tab, 1), 2)
+
+# Fisher's exact test:
+
+fisher.test(E1b_tab)
+```
+
+
+
+

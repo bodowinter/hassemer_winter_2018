@@ -1,0 +1,277 @@
+---
+title: "Experiment 3: Selective depiction text-based experiment"
+author: "Bodo Winter, Julius Hassemer"
+date: "9/3/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preprocessing
+
+This is the analysis for Experiment 3. We begin by loading the necessary libraries.
+
+```{r libraries, message = FALSE}
+library(tidyverse)
+library(stringr)
+library(tidytext)
+library(MuMIn)
+```
+
+Next, load in the data.
+
+```{r E3_data_entry}
+E3 <- read.csv('../data/E3.csv',
+               skip = 1,
+               stringsAsFactors = FALSE,
+               fileEncoding = 'latin1')
+```
+
+Let's rename the really ugly column names (thanks Qualtrics!).
+
+```{r E3_renaming}
+E3 <- rename(E3,
+             ID = ResponseID,
+             Condition = Display.Order..Block.Randomizer.FL_5,
+             DisplayOrder = Display.Order..Block.Randomizer.FL_31,
+             Language = What.is.your.native.language...your.native.languages..Your.native.language.s..is.what.you.spoke.a...,
+             Control = What.is.4.plus.5.,
+             Age = What.is.your.age.,
+             Gender = What.is.your.gender.,
+             Handedness = Are.you.left.or.right.handed.,
+             Comments = Please.share.any.comments..questions..thoughts.or.ideas.you.have.on.the.gesture.you.just.saw.or.t...,
+             Shape1 = In.your.mind..what.was.the.object.s.SHAPE..Describe.,
+             Size1 = In.your.mind..what.was.the.object.s.SIZE..Describe.,
+             Shape2 = In.your.mind..what.was.the.object.s.SHAPE..Describe..1,
+             Size2 = In.your.mind..what.was.the.object.s.SIZE..Describe..1)
+```
+
+Let's get only those columns that we need:
+
+```{r subset_cols}
+E3 <- select(E3,
+             ID, Condition, DisplayOrder, Language, Control,
+             Age, Gender, Handedness, Shape1, Shape2,
+             Size1, Size2, Comments)
+```
+
+Make this data frame into a tibble:
+
+```{r df_to_tibble}
+E3 <- as_tibble(E3)
+```
+
+Combine the different shape and size text response columns (they are from different Qualtrics randomizations, which get put into different columns).
+
+```{r column_combine}
+E3 <- unite(E3,
+            Shape, Shape1, Shape2)
+E3 <- unite(E3,
+            Size, Size1, Size2)
+```
+
+Exclude those who got the control question NA (these are partial responses):
+
+```{r exclude_NAs}
+print(old.N <- nrow(E3))
+E3 <- filter(E3, !is.na(Control))
+print(new.N <- nrow(E3))
+new.N / old.N
+```
+
+Take only those that are native speakers (bilinguals are included as long as they list English first).
+
+```{r native_speakers}
+these_langs <- c('Russian, English ', 'Arabic', 'Indonesian, English.')
+E3 <- filter(E3, !(Language %in% these_langs))
+```
+
+## Create text file to be manually coded
+
+Make into lower case:
+
+```{r lowercase}
+E3 <- mutate(E3,
+	Shape = str_to_lower(Shape),
+	Size = str_to_lower(Size))
+```
+
+Replace underscores (which are spaces):
+
+```{r rid_underscores}
+E3 <- mutate(E3,
+	Shape = str_replace_all(Shape, '_', ''),
+	Size = str_replace_all(Size, '_', ''))
+```
+
+Replace extra characters for quotation marks and also dots:
+
+```{r special_chars}
+E3 <- mutate(E3,
+	Shape = str_replace_all(Shape, '\"', ''),
+	Size = str_replace_all(Size, '\"', ''),
+	Shape = str_replace_all(Shape, '\\.', ''),
+	Size = str_replace_all(Size, '\\.', ''))
+```
+
+Extract word count:
+
+```{r wordcount}
+size_counts <- unnest_tokens(E3, Size, Size) %>%
+	count(ID) %>% rename(SizeCount = n)
+shape_counts <- unnest_tokens(E3, Shape, Shape) %>%
+	count(ID) %>% rename(ShapeCount = n)
+```
+
+Merge into table:
+
+```{r table_merge}
+E3 <- left_join(E3, size_counts)
+E3 <- left_join(E3, shape_counts)
+```
+
+Check some responses:
+
+```{r check_responses}
+filter(E3, Condition == 'LowCurl')$Size
+filter(E3, Condition == 'HighCurl')$Size
+
+filter(E3, Condition == 'LowCurl')$Shape
+filter(E3, Condition == 'HighCurl')$Shape
+```
+
+Write to table, which was then used for manual coding of responses.
+
+```{r write_annotations}
+text_red <- select(E3,
+                   ID, Condition, Shape, Size, Comments)
+write_csv(text_red, '../data/text_experiment_to_be_coded.csv')
+```
+
+Load in the manually coded data.
+
+```{r load_manual_codes}
+labels <- read_csv('../data/E3_coded.csv')
+```
+
+The following analyses will be based on the coded data.
+
+## Shape analysis (round vs. rectangular):
+
+First, let's look at the object shape being mentioned.
+
+```{r shape_descriptive}
+with(labels, shape_tab <<- table(Condition, Round))
+shape_tab
+```
+
+The "sign" responses are "ok signs". Get only the "rectangular" versus "round" ones.
+
+```{r shape_red}
+mycols <- colnames(shape_tab) %in% c('rectangular', 'yes')
+shape_tab_red <- shape_tab[, mycols]
+```
+
+Let's look at the proportions of this:
+
+```{r shape_props}
+round(prop.table(shape_tab_red, 1), 2)
+```
+
+Finally, let's perform a test of this:
+
+```{r shape_test}
+fisher.test(shape_tab_red)
+```
+
+## Vagueness analysis:
+
+Let's check shape vagueness expressions:
+
+```{r vague_descriptive}
+with(labels, vague_tab <<- table(Condition, Vagueness))
+vague_tab
+round(prop.table(vague_tab, 1), 2)
+```
+
+Let's perform a test of this:
+
+```{r vague_test}
+fisher.test(vague_tab)
+```
+
+## Number mentioning:
+
+Let's check at those that mentioned any number for the size question.
+
+```{r num_tab}
+labels <- mutate(labels,
+                 AnyNumber = ifelse(str_detect(Type, 'number'), 'yes', 'no'))
+with(labels, num_tab <<- table(Condition, AnyNumber))
+num_tab
+round(prop.table(num_tab, 1), 2)
+```
+
+Perform a test of this:
+
+```{r num_test}
+fisher.test(num_tab)
+```
+
+## Magnitude word mentioning:
+
+Is the proportion of "magnitude words" such as "small", "large", and "medium-sized" different between the two conditions?
+
+First, let's create a variable which codes for whether there was a dimension word or not:
+
+```{r any_dim_var_create}
+labels <- mutate(labels,
+                 AnyDimension = ifelse(str_detect(Type, 'dimension'), 'yes', 'no'))
+```
+
+Next, we perform a test of this:
+
+```{r dim_assess}
+with(labels, anydim_tab <<- table(Condition, AnyDimension))
+round(prop.table(anydim_tab, 1), 2)
+fisher.test(anydim_tab)
+```
+
+Let's look at whether the TYPES of dimension words are different between the two conditions.
+
+```{r dim_types}
+with(labels, dim_type <<- table(Condition, TypeOfSize))
+dim_type
+```
+
+We will combine the various "medium" ones (results wouldn't change much if "medium to large" is counted as "large" etc.)
+
+```{r dim_simplify}
+meds <- dim_type[, 'medium_to_large'] +
+  dim_type[, 'small_to_medium'] + dim_type[, 'medium']
+```
+
+Put it all together:
+
+```{r dim_type_cleaned}
+dim_type_red <- cbind(dim_type[, 'small'],
+                      meds, dim_type[, 'large'])
+colnames(dim_type_red) <- c('small', 'medium', 'large')
+```
+
+Look at this descriptively:
+
+```{r dim_type_descriptive}
+dim_type_red
+round(prop.table(dim_type_red, 1), 2)
+```
+
+Finally, perform the test.
+
+```{r dim_type_test}
+fisher.test(dim_type_red)
+```
+
+
