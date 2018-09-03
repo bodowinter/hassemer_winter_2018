@@ -1,4 +1,4 @@
-# Analysis for Hassemer & Winter (2018), "Decoding gestural iconicity"
+# Analysis for "Decoding gestural iconicity"
 
 This is the analysis for Hassemer and Winter (2018). This repository is a rebirth of the following repository, which is kept open for transparency's sake:
 
